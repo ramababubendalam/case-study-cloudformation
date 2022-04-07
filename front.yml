@@ -1,0 +1,382 @@
+---
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "front services"
+
+Mappings:
+  Profiles:
+    euwest1:
+      PrivateSubnetA: subnet-b64c2fc0
+      PrivateSubnetB: subnet-33a7166b
+      PrivateSubnetC: subnet-b95e29dd
+
+      PublicSubnetA: subnet-b74c2fc1
+      PublicSubnetB: subnet-0aa71652
+      PublicSubnetC: subnet-ae5e29ca
+
+      AvailabilityZoneA: eu-west-1a
+      AvailabilityZoneB: eu-west-1b
+      Vpc: vpc-d70c9bb3
+
+      FrontendBaseImage: ami-9741d4ee
+
+    uswest2:
+      PrivateSubnetA: subnet-019a5bf63192b1850
+      PrivateSubnetB: subnet-0c9ab15a26b100f71
+      PrivateSubnetC: subnet-07327f492cbdfb2db
+
+      PublicSubnetA: subnet-0c9236e48e550358c
+      PublicSubnetB: subnet-0b46648791dfaee0d
+      PublicSubnetC: subnet-045225a77c3297012
+
+      AvailabilityZoneA: us-west-2a
+      AvailabilityZoneB: us-west-2b
+      Vpc: vpc-084823691a96fd001
+
+      FrontendBaseImage: ami-0888da316baeec866
+
+    apsoutheast2:
+      PrivateSubnetA: subnet-0cc64fb78094046d3
+      PrivateSubnetB: subnet-00a25b57402b14dfe
+
+      PublicSubnetA: subnet-0bd2f0dd4aec1d081
+      PublicSubnetB: subnet-06cf5ba0866656b38
+
+      AvailabilityZoneA: ap-southeast-2a
+      AvailabilityZoneB: ap-southeast-2b
+      Vpc: vpc-0c3b47208ddc76c6d
+
+      FrontendBaseImage: ami-03dbd8a706abc2a48
+
+    saeast1:
+      PrivateSubnetA: subnet-029066fba27419fb4
+      PrivateSubnetB: subnet-0ba255f06d51285c8
+
+      PublicSubnetA: subnet-0824213c90d4df463
+      PublicSubnetB: subnet-0d3c2465fd545b206
+
+      AvailabilityZoneA: sa-east-1a
+      AvailabilityZoneB: sa-east-1c
+      Vpc: vpc-0e7ac7064ee61aea7
+
+
+      FrontendBaseImage: ami-00e34aa97ab769c47
+
+
+
+
+Parameters:
+  Profile:
+    Type: String
+    Default: euwest1
+
+  FrontendInstanceType:
+    Type: String
+    Default: t2.small
+
+  DNSZone:
+    Type: String
+    Default: photobox.com
+
+Resources:
+
+# default sg
+  GeneralSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "GeneralSecurityGroup"
+      VpcId: !FindInMap [Profiles, !Ref Profile, Vpc]
+
+  AccessRule1:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref GeneralSecurityGroup
+      CidrIp: "0.0.0.0/0"
+      FromPort: 80
+      ToPort: 80
+      IpProtocol: tcp
+  AccessRule2:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref GeneralSecurityGroup
+      CidrIp: "0.0.0.0/0"
+      FromPort: 443
+      ToPort: 443
+      IpProtocol: tcp
+
+  FrontAccessBetweenNodes1:
+      Type: AWS::EC2::SecurityGroupIngress
+      Properties:
+        GroupId: !Ref GeneralSecurityGroup
+        SourceSecurityGroupId: !Ref GeneralSecurityGroup
+        FromPort: 8080
+        ToPort: 8080
+        IpProtocol: tcp
+
+  
+
+# frontend nodes
+
+  Frontend1:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap [Profiles, !Ref Profile, FrontendBaseImage]
+      AvailabilityZone: !FindInMap [Profiles, !Ref Profile, AvailabilityZoneA]
+      KeyName: !FindInMap [Profiles, !Ref Profile, KeyName]
+      SubnetId: !FindInMap [Profiles, !Ref Profile, PublicSubnetA]
+      InstanceType: !Ref FrontendInstanceType
+      SecurityGroupIds:
+        - !Ref GeneralSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub "frontend1-${AWS::StackName}"
+        - Key: Category
+          Value: Prod
+        - Key: Env
+          Value: Prod
+      UserData:
+        Fn::Base64:
+          !Sub |
+            #cloud-config
+            hostname: frontend1-${AWS::StackName}
+            fqdn: frontend1-${AWS::StackName}.photobox.com
+            ssh_pwauth: true
+
+  Frontend1EIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      InstanceId: !Ref Frontend1
+
+  Frontend1InternalDNS:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneName: !Sub "${DNSZone}."
+      Type: A
+      TTL: 300
+      Name: !Sub "front1-${AWS::Region}.${DNSZone}"
+      ResourceRecords:
+        - !GetAtt Frontend1.PrivateIp
+
+  Frontend2:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap [Profiles, !Ref Profile, FrontendBaseImage]
+      AvailabilityZone: !FindInMap [Profiles, !Ref Profile, AvailabilityZoneB]
+      KeyName: !FindInMap [Profiles, !Ref Profile, KeyName]
+      SubnetId: !FindInMap [Profiles, !Ref Profile, PublicSubnetB]
+      InstanceType: !Ref FrontendInstanceType
+      SecurityGroupIds:
+        - !Ref GeneralSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub "frontend2-${AWS::StackName}"
+        - Key: Category
+          Value: Prod
+        - Key: Env
+          Value: Prod
+      UserData:
+        Fn::Base64:
+          !Sub |
+            #cloud-config
+            hostname: frontend2-${AWS::StackName}
+            fqdn: frontend2-${AWS::StackName}.photobox.com
+            ssh_pwauth: true
+
+  Frontend2EIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      InstanceId: !Ref Frontend2
+
+  Frontend2InternalDNS:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneName: !Sub "${DNSZone}."
+      Type: A
+      TTL: 300
+      Name: !Sub "front2-${AWS::Region}.${DNSZone}"
+      ResourceRecords:
+        - !GetAtt Frontend2.PrivateIp
+
+ 
+  FrontBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Type: network
+      Subnets:
+          - !FindInMap [Profiles, !Ref Profile, PublicSubnetA]
+          - !FindInMap [Profiles, !Ref Profile, PublicSubnetB]
+
+  FrontHTTPTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+        VpcId: !FindInMap [Profiles, !Ref Profile, Vpc]
+        Port: 80
+        Protocol: TCP
+        Targets:
+            - Id: !Ref Frontend1
+              Port: 80
+            - Id: !Ref Frontend2
+              Port: 80
+  FrontHTTPListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+        Port: 80
+        Protocol: TCP
+        LoadBalancerArn: !Ref FrontBalancer
+        DefaultActions:
+            - Type: forward
+              TargetGroupArn: !Ref FrontHTTPTargetGroup
+  
+  FrontHTTPSTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+        VpcId: !FindInMap [Profiles, !Ref Profile, Vpc]
+        Port: 443
+        Protocol: TCP
+        Targets:
+            - Id: !Ref Frontend1
+              Port: 443
+            - Id: !Ref Frontend2
+              Port: 443
+  FrontHTTPSListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+        Port: 443
+        Protocol: TCP
+        LoadBalancerArn: !Ref FrontBalancer
+        DefaultActions:
+            - Type: forward
+              TargetGroupArn: !Ref FrontHTTPSTargetGroup
+  
+  
+  FrontendELBDNS1:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneName: "photobox.com."
+      Type: CNAME
+      TTL: 300
+      Name: !FindInMap [Profiles, !Ref Profile, DNS]
+      ResourceRecords:
+        - !GetAtt FrontBalancer.DNSName
+  FrontendELBDNS2:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneName: "photobox.com."
+      Type: CNAME
+      TTL: 300
+      Name: !FindInMap [Profiles, !Ref Profile, DNS]
+      ResourceRecords:
+        - !GetAtt FrontBalancer.DNSName
+
+
+  AutoscalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      LaunchConfigurationName: !Ref LaunchConfig
+      TargetGroupARNs:
+           - !Ref FrontHTTPSTargetGroup
+           - !Ref FrontHTTPTargetGroup
+      MinSize: 2
+      MaxSize: 20
+      DesiredCapacity: 1
+      VPCZoneIdentifier:
+          - !FindInMap [ Profiles, !Ref Profile, PublicSubnetA ]
+      Tags:
+        - Key: Category
+          Value: Prod
+        - Key: Env
+          Value: Prod
+    UpdatePolicy:
+      AutoScalingReplacingUpdate:
+        WillReplace: True
+
+  LaunchConfig:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      ImageId: !FindInMap [ Profiles, !Ref Profile, BaseImage ]
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile: !Ref InstanceProfile
+      # EbsOptimized: True
+      KeyName: !FindInMap [ Profiles, !Ref Profile, KeyName ]
+      SecurityGroups:
+        - !Ref GeneralSg
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeSize: !Ref VolumeSize
+            VolumeType: gp2
+            DeleteOnTermination: true
+      UserData:
+        Fn::Base64:
+          !Sub
+          - |
+            #!/bin/bash -xe
+            cat <<EOF > /opt/playbook.yml
+            - hosts: localhost
+              connection: local
+              vars:
+              roles:
+                - "case-study-nginx-role"
+            EOF
+            # roles file
+            cat <<EOF > /opt/roles.yml
+            - src: git@github.com:ramababubendalam/case-study-nginx-role.git
+              scm: git
+              version: main
+            EOF
+            # install roles
+            ansible-galaxy install -v -r /opt/roles.yml --force
+            # run play
+            ansible-playbook /opt/playbook.yml
+
+  AutoscaleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      ComparisonOperator: GreaterThanThreshold
+      EvaluationPeriods: 2
+      MetricName: engine-room-live
+      Namespace: engine-room-live
+      Period: 10
+      ExtendedStatistic: p100
+      Threshold: 1
+      TreatMissingData: ignore
+      Dimensions:
+        - Name: Service
+          Value: ""
+        - Name: Stack
+          Value: ""
+        - Name: AWSRegion
+          Value: !FindInMap [ Profiles, !Ref Profile, Region ]
+      OKActions:
+        - !Ref ScalingUpPolicy
+      AlarmActions:
+        - !Ref ScalingUpPolicy
+
+  ScalingUpPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AdjustmentType: ExactCapacity
+      AutoScalingGroupName: !Ref AutoscalingGroup
+      PolicyType: StepScaling
+      StepAdjustments:
+        - MetricIntervalUpperBound: 0.0
+          ScalingAdjustment: 0
+        - MetricIntervalLowerBound: 0.0
+          MetricIntervalUpperBound: 1.0
+          ScalingAdjustment: 1
+        - MetricIntervalLowerBound: 1.0
+          MetricIntervalUpperBound: 2.0
+          ScalingAdjustment: 2
+        - MetricIntervalLowerBound: 2.0
+          MetricIntervalUpperBound: 3.0
+          ScalingAdjustment: 3
+        - MetricIntervalLowerBound: 3.0
+          MetricIntervalUpperBound: 4.0
+          ScalingAdjustment: 4
+        - MetricIntervalLowerBound: 4.0
+          MetricIntervalUpperBound: 6.0
+          ScalingAdjustment: 6
+        - MetricIntervalLowerBound: 6.0
+          MetricIntervalUpperBound: 8.0
+          ScalingAdjustment: 8
+        - MetricIntervalLowerBound: 8.0
+          ScalingAdjustment: 10
